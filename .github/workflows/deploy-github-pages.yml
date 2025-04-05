@@ -1,45 +1,90 @@
-name: Build and deploy to pages
-
+name: Build and deploy to pages and container registry
 on:
   workflow_dispatch:
 
-# GITHUB_TOKEN permssions for deploying to pages
 permissions:
   contents: read
   pages: write
   id-token: write
+  packages: write # Needed for pushing to ghcr.io
 
 concurrency:
   group: "pages"
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build_and_deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      # Step 1: Checkout *your* repository (contains Dockerfile and this workflow)
+      - name: Checkout Workflow Repo
+        uses: actions/checkout@v4
+        # No 'repository' needed, defaults to the current repo
+
+      # Step 2: Checkout Joplin into a subdirectory
+      - name: Checkout Joplin Source
         uses: actions/checkout@v4
         with:
           repository: 'laurent22/joplin'
           ref: dev
+          path: joplin # Checkout into a 'joplin' subdirectory
+
       - name: Prepare yarn
         run: corepack enable
-      - name: Install dependencies
+
+      - name: Install Joplin dependencies
+        working-directory: ./joplin # Specify working directory
         run: yarn install
-      - name: Build pages
-        run: cd packages/app-mobile/ && yarn web
-      - name: Copy pages artifact
+
+      - name: Build Joplin pages
+        working-directory: ./joplin/packages/app-mobile # Specify working directory
+        run: yarn web
+
+      - name: Create pages directory and Copy Joplin artifact
         run: |
-          cp -r packages/app-mobile/web/dist/ pages/
+          mkdir -p pages/ # Ensure pages directory exists at the root
+          cp -r joplin/packages/app-mobile/web/dist/* pages/ # Copy contents into pages/
+
+      # --- GitHub Pages Deployment ---
       - name: Setup Pages
         uses: actions/configure-pages@v5
-      - name: Upload artifact
+
+      - name: Upload artifact for Pages
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'pages/'
+          path: 'pages/' # Upload the created pages directory
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # --- Docker Container Deployment ---
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tag
+        id: vars
+        run: echo "tag=$(date +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        # No 'with: driver: docker-container' needed unless specific features required
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: . # Use the root of the workspace as context
+          # Dockerfile should be found at ./Dockerfile
+          # COPY ./pages/ will work because pages/ exists at the root
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ steps.vars.outputs.tag }}
