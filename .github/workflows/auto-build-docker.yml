@@ -37,6 +37,12 @@ jobs:
         working-directory: ./joplin/packages/app-mobile
         run: yarn web
 
+      # ⭐ 新增：修复 pages 目录缺失问题
+      - name: Create pages directory and copy Joplin artifact
+        run: |
+          mkdir -p pages/
+          cp -r joplin/packages/app-mobile/web/dist/* pages/
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
