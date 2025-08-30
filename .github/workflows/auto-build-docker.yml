@@ -26,6 +26,10 @@ jobs:
           ref: dev
           path: joplin
 
+      ## 修复标题框输入乱跳的问题
+      - name: Patch TextInput to fix input jumping
+        run: bash patch-textinput.sh
+
       - name: Prepare yarn
         run: corepack enable
 
