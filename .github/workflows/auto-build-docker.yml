@@ -89,15 +89,13 @@ jobs:
           echo "镜像: ${{ steps.prep.outputs.image }}"
           echo "标签: ${{ steps.vars.outputs.tag }}"
 
-  # ⭐ 修改：暂时禁用清理步骤，直到确认镜像推送成功
   cleanup_old_images:
-   runs-on: ubuntu-latest
-   needs: build_and_push
-   steps:
-     - name: Delete old container images (keep latest 5)
-       uses: actions/delete-package-versions@v5
-       with:
-         package-name: ${{ github.event.repository.name }}
-         package-type: container
-         min-versions-to-keep: 4
-         delete-only-pre-release-versions: true
+    runs-on: ubuntu-latest
+    needs: build_and_push
+    steps:
+      - name: Delete old container images (keep latest 5)
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ github.event.repository.name }}
+          package-type: container
+          min-versions-to-keep: 5
