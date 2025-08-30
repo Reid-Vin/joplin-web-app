@@ -3,34 +3,48 @@ set -e
 
 TARGET_FILE="joplin/packages/app-mobile/components/TextInput.tsx"
 
-# 检查文件是否存在
 if [ ! -f "$TARGET_FILE" ]; then
   echo "❌ 找不到 TextInput.tsx，跳过补丁"
   exit 0
 fi
 
-# 插入组合事件处理逻辑（只在第一次构建时插入）
-if ! grep -q "onCompositionStart" "$TARGET_FILE"; then
-  echo "✅ 注入组合事件处理逻辑到 TextInput.tsx"
+# 1. 增加 Platform、useRef 引入（避免重复插入）
+if ! grep -q "Platform" "$TARGET_FILE"; then
+  sed -i "/import { themeStyle } from '.\/global-style';/a\\
+import { Platform } from 'react-native';\
+import { useRef } from 'react';" "$TARGET_FILE"
+fi
 
-  # 在 import 后插入 useRef
-  sed -i "/import { TextInputProps } from 'react-native';/a\\
-import { useRef } from 'react';
-" "$TARGET_FILE"
-
-  # 在组件函数内部插入组合状态逻辑
-  sed -i "/const TextInputComponent =/a\\
+# 2. 插入组合输入处理逻辑（避免重复插入）
+if ! grep -q "composingRef" "$TARGET_FILE"; then
+  sed -i "/const theme = themeStyle(props.themeId);/a\\
+  // 组合输入状态（仅web生效）\\
   const composingRef = useRef(false);\\
   const handleCompositionStart = () => { composingRef.current = true; };\\
   const handleCompositionEnd = () => { composingRef.current = false; };\\
   const handleChangeText = (text: string) => {\\
     if (composingRef.current) return;\\
     props.onChangeText?.(text);\\
-  };
-" "$TARGET_FILE"
-
-  # 替换原来的 onChangeText 为 handleChangeText，并添加组合事件
-  sed -i "s/<TextInput /<TextInput onChangeText={handleChangeText} onCompositionStart={handleCompositionStart} onCompositionEnd={handleCompositionEnd} /" "$TARGET_FILE"
-else
-  echo "⚠️ TextInput.tsx 已包含组合事件处理逻辑，跳过注入"
+  };" "$TARGET_FILE"
 fi
+
+# 3. 替换 TextInput 渲染部分，插入web平台事件（只替换最后一行的TextInput标签即可）
+# 先删除最后一行
+sed -i '$d' "$TARGET_FILE"
+
+# 追加新TextInput渲染（带web端平台判断，TS兼容）
+cat <<EOF >> "$TARGET_FILE"
+  return (
+    <TextInput
+      {...finalProps}
+      onChangeText={handleChangeText}
+      {...(Platform.OS === 'web' ? {
+        onCompositionStart: handleCompositionStart,
+        onCompositionEnd: handleCompositionEnd,
+      } : {})}
+    />
+  );
+};
+EOF
+
+echo "✅ TextInput.tsx 已自动修复，可兼容web端组合输入，且不会影响RN端编译"
